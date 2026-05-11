@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Greeter DApp | Next-Gen Experience</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="index.css">
+</head>
+
+<body>
+  <!-- Background Elements -->
+  <img src="background.png" class="bg-image" alt="Background">
+  <div class="bg-blobs">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+  </div>
+
+  <div class="container">
+    <div id="statusMsg" class="status-msg">Awaiting Signature...</div>
+    <header>
+      <h1>Greeter</h1>
+      <p class="subtitle">Decentralized Expressions</p>
+    </header>
+
+    <div class="wallet-status">
+      <button id="connectBtn" class="btn-connect" onclick="connectWallet()">Connect Wallet</button>
+    </div>
+
+    <main>
+      <div class="display-area">
+        <span class="label">CURRENT GREETING</span>
+        <p id="greeting">Connecting to blockchain...</p>
+      </div>
+
+      <div class="interaction-area">
+        <div class="input-group">
+          <input type="text" id="newGreeting" placeholder="Type your message..." autocomplete="off">
+        </div>
+        <button class="btn-update" onclick="updateGreeting()">Update Greeting</button>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+  <script>
+    let web3;
+    let contract;
+
+    // Dynamic addresses discovered in your build history
+    const contractAddresses = {
+      "5777": "0xaD7e72E8bef12A73D266C453605C462E76326386", // Latest Ganache (7545)
+      "1337": "0xaD7e72E8bef12A73D266C453605C462E76326386", // Latest Ganache CLI (8545)
+      "1777276013034": "0xc834a17385bd5b5C81b571b5E25d7C3d1C72359E"
+    };
+
+    const abi = [
+      {
+        "inputs": [],
+        "stateMutability": "nonpayable",
+        "type": "constructor"
+      },
+      {
+        "inputs": [],
+        "name": "greeting",
+        "outputs": [
+          {
+            "internalType": "string",
+            "name": "",
+            "type": "string"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function",
+        "constant": true
+      },
+      {
+        "inputs": [],
+        "name": "greet",
+        "outputs": [
+          {
+            "internalType": "string",
+            "name": "",
+            "type": "string"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function",
+        "constant": true
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "string",
+            "name": "_greeting",
+            "type": "string"
+          }
+        ],
+        "name": "setGreeting",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      }
+    ];
+
+    function showStatus(text, isLoading = true, duration = 0) {
+      const el = document.getElementById('statusMsg');
+      el.innerText = text;
+      el.className = `status-msg active ${isLoading ? 'loading' : ''}`;
+      if (duration > 0) {
+        setTimeout(() => {
+          el.classList.remove('active');
+        }, duration);
+      }
+    }
+
+    async function connectWallet() {
+      const btn = document.getElementById('connectBtn');
+      if (window.ethereum) {
+        try {
+          btn.innerText = "Connecting...";
+          web3 = new Web3(window.ethereum);
+          await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+          const networkId = await web3.eth.net.getId();
+          const address = contractAddresses[networkId];
+
+          if (!address) {
+            showStatus("No contract for Network ID: " + networkId, false, 5000);
+            btn.innerText = "Network Error";
+            document.getElementById("greeting").innerText = "Please redeploy to Network " + networkId;
+            return;
+          }
+
+          contract = new web3.eth.Contract(abi, address);
+          btn.innerText = "Net: " + networkId + " | " + address.substring(0, 6) + "...";
+          btn.style.background = "linear-gradient(45deg, #10b981, #059669)";
+          getGreeting();
+        } catch (error) {
+          console.error(error);
+          btn.innerText = "Connection Failed";
+        }
+      } else {
+        alert("Please install MetaMask!");
+      }
+    }
+
+    async function getGreeting() {
+      if (!contract) return;
+      try {
+        const result = await contract.methods.greet().call();
+        document.getElementById("greeting").innerText = result || "No greeting set yet";
+      } catch (error) {
+        console.error("Contract Call Error:", error);
+        const addr = contract.options.address;
+        document.getElementById("greeting").innerText = "Error at " + addr.substring(0, 8) + "...";
+        showStatus("Contract not found at this address", false, 5000);
+      }
+    }
+
+    async function updateGreeting() {
+      if (!web3 || !contract) {
+        alert("Please connect your wallet first!");
+        return;
+      }
+      const input = document.getElementById("newGreeting");
+      const btn = document.querySelector(".btn-update");
+      const value = input.value;
+
+      if (!value) return;
+
+      try {
+        const accounts = await web3.eth.getAccounts();
+        btn.disabled = true;
+
+        showStatus("Check Wallet...");
+
+        contract.methods.setGreeting(value).send({ from: accounts[0] })
+          .on('transactionHash', (hash) => {
+            showStatus("Mining...");
+          })
+          .on('receipt', (receipt) => {
+            showStatus("Success!", false, 3000);
+            input.value = "";
+            getGreeting();
+            btn.disabled = false;
+          })
+          .on('error', (error) => {
+            showStatus("Failed", false, 3000);
+            console.error(error);
+            btn.disabled = false;
+          });
+
+      } catch (error) {
+        showStatus("Error", false, 3000);
+        console.error(error);
+        btn.disabled = false;
+      }
+    }
+
+    window.addEventListener('load', async () => {
+      if (window.ethereum && window.ethereum.selectedAddress) {
+        connectWallet();
+      }
+    });
+  </script>
+</body>
+
+</html>
